@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Nightlight
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.reinekes.darkapp.brightness.BrightnessBoost
 import com.reinekes.darkapp.dimming.DimFilter
 import com.reinekes.darkapp.dimming.DimMath
 import com.reinekes.darkapp.dimming.DimPreset
@@ -89,6 +91,7 @@ private fun DimmerScreen() {
     var percent by remember { mutableIntStateOf(36) }
     var enabled by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(DimFilter.Neutral) }
+    var brightnessBoost by remember { mutableStateOf(BrightnessBoost.Auto) }
 
     fun startOverlay(nextPercent: Int = percent, nextFilter: DimFilter = filter) {
         percent = nextPercent
@@ -103,6 +106,11 @@ private fun DimmerScreen() {
     fun stopOverlay() {
         enabled = false
         context.startService(DimOverlayService.stopIntent(context))
+    }
+
+    fun applyBrightnessBoost(nextBoost: BrightnessBoost) {
+        brightnessBoost = nextBoost
+        context.applyBrightnessBoost(nextBoost)
     }
 
     Scaffold { padding ->
@@ -128,10 +136,16 @@ private fun DimmerScreen() {
                 onOpenSettings = { context.openOverlaySettings() },
             )
 
+            BrightnessPermissionCard(
+                canWriteSettings = Settings.System.canWrite(context),
+                onOpenSettings = { context.openWriteSettings() },
+            )
+
             ControlPanel(
                 percent = percent,
                 enabled = enabled,
                 filter = filter,
+                brightnessBoost = brightnessBoost,
                 onPercentChange = { next ->
                     percent = next
                     if (enabled) startOverlay(next, filter)
@@ -141,6 +155,7 @@ private fun DimmerScreen() {
                     filter = next
                     if (enabled) startOverlay(percent, next)
                 },
+                onBrightnessBoost = ::applyBrightnessBoost,
                 onStart = { startOverlay() },
                 onStop = { stopOverlay() },
             )
@@ -215,15 +230,62 @@ private fun PermissionCard(hasOverlayPermission: Boolean, onOpenSettings: () -> 
     }
 }
 
+@Composable
+private fun BrightnessPermissionCard(canWriteSettings: Boolean, onOpenSettings: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (canWriteSettings) Color(0xFF17251D) else Color(0xFF221F2C),
+        ),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.WbSunny,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+                tint = if (canWriteSettings) Color(0xFF9AE6B4) else Color(0xFFFFC857),
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (canWriteSettings) "Brightness control granted" else "Brightness control optional",
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (canWriteSettings) {
+                        "The app can set system brightness for quick boost."
+                    } else {
+                        "Allow system settings changes to use brightness boost."
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+            }
+            if (!canWriteSettings) {
+                OutlinedButton(onClick = onOpenSettings) {
+                    Text("Open")
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ControlPanel(
     percent: Int,
     enabled: Boolean,
     filter: DimFilter,
+    brightnessBoost: BrightnessBoost,
     onPercentChange: (Int) -> Unit,
     onPreset: (DimPreset) -> Unit,
     onFilter: (DimFilter) -> Unit,
+    onBrightnessBoost: (BrightnessBoost) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
 ) {
@@ -265,18 +327,10 @@ private fun ControlPanel(
                 fontSize = 13.sp,
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                DimPreset.entries.forEach { preset ->
-                    FilterChip(
-                        selected = percent == preset.percent,
-                        onClick = { onPreset(preset) },
-                        label = { Text(preset.label) },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Nightlight, contentDescription = null, modifier = Modifier.size(18.dp))
-                        },
-                    )
-                }
-            }
+            PresetChips(
+                percent = percent,
+                onPreset = onPreset,
+            )
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Tone", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -289,6 +343,14 @@ private fun ControlPanel(
                         )
                     }
                 }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Brightness boost", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                BrightnessBoostChips(
+                    brightnessBoost = brightnessBoost,
+                    onBrightnessBoost = onBrightnessBoost,
+                )
             }
 
             Spacer(modifier = Modifier.height(2.dp))
@@ -307,6 +369,62 @@ private fun ControlPanel(
                     Icon(Icons.Rounded.DarkMode, contentDescription = null, modifier = Modifier.size(19.dp))
                     Spacer(Modifier.size(8.dp))
                     Text("Stop")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PresetChips(percent: Int, onPreset: (DimPreset) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        DimPreset.entries.chunked(2).forEach { rowPresets ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                rowPresets.forEach { preset ->
+                    FilterChip(
+                        selected = percent == preset.percent,
+                        onClick = { onPreset(preset) },
+                        label = { Text(preset.label) },
+                        modifier = Modifier.weight(1f),
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Nightlight, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrightnessBoostChips(
+    brightnessBoost: BrightnessBoost,
+    onBrightnessBoost: (BrightnessBoost) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        BrightnessBoost.entries.chunked(3).forEach { rowBoosts ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                rowBoosts.forEach { item ->
+                    FilterChip(
+                        selected = brightnessBoost == item,
+                        onClick = { onBrightnessBoost(item) },
+                        label = { Text(item.label) },
+                        modifier = Modifier.weight(1f),
+                        leadingIcon = if (item == BrightnessBoost.Percent100) {
+                            {
+                                Icon(
+                                    Icons.Rounded.WbSunny,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                }
+                repeat(3 - rowBoosts.size) {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -340,4 +458,30 @@ private fun Context.openOverlaySettings() {
         Uri.parse("package:$packageName"),
     )
     startActivity(intent)
+}
+
+private fun Context.openWriteSettings() {
+    val intent = Intent(
+        Settings.ACTION_MANAGE_WRITE_SETTINGS,
+        Uri.parse("package:$packageName"),
+    )
+    startActivity(intent)
+}
+
+private fun Context.applyBrightnessBoost(boost: BrightnessBoost) {
+    val value = boost.screenBrightnessValue ?: return
+    if (!Settings.System.canWrite(this)) {
+        openWriteSettings()
+        return
+    }
+    Settings.System.putInt(
+        contentResolver,
+        Settings.System.SCREEN_BRIGHTNESS_MODE,
+        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
+    )
+    Settings.System.putInt(
+        contentResolver,
+        Settings.System.SCREEN_BRIGHTNESS,
+        value,
+    )
 }

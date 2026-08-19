@@ -7,4 +7,5 @@ enum class DimPreset(
     Reading("Reading", 22),
     Night("Night", 48),
     Ultra("Ultra", 82),
+    Deep("Deep", 96),
 }

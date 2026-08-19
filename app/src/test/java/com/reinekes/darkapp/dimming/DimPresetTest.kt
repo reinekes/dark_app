@@ -9,6 +9,7 @@ class DimPresetTest {
         assertEquals(22, DimPreset.Reading.percent)
         assertEquals(48, DimPreset.Night.percent)
         assertEquals(82, DimPreset.Ultra.percent)
+        assertEquals(96, DimPreset.Deep.percent)
     }
 
     @Test
@@ -16,5 +17,6 @@ class DimPresetTest {
         assertEquals("Reading", DimPreset.Reading.label)
         assertEquals("Night", DimPreset.Night.label)
         assertEquals("Ultra", DimPreset.Ultra.label)
+        assertEquals("Deep", DimPreset.Deep.label)
     }
 }
