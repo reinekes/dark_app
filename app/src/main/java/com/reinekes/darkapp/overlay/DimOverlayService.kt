@@ -18,6 +18,7 @@ import com.reinekes.darkapp.MainActivity
 import com.reinekes.darkapp.R
 import com.reinekes.darkapp.dimming.DimFilter
 import com.reinekes.darkapp.dimming.OverlayColor
+import kotlin.math.roundToInt
 
 class DimOverlayService : Service() {
     private val windowManager by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
@@ -41,10 +42,14 @@ class DimOverlayService : Service() {
                 val filter = intent?.getStringExtra(EXTRA_FILTER)
                     ?.let { runCatching { DimFilter.valueOf(it) }.getOrNull() }
                     ?: DimFilter.Neutral
+                val alphaOverride = intent
+                    ?.takeIf { it.hasExtra(EXTRA_ALPHA_OVERRIDE) }
+                    ?.getFloatExtra(EXTRA_ALPHA_OVERRIDE, -1f)
+                    ?.takeIf { it in 0f..0.99f }
 
                 createChannel()
-                startForeground(NOTIFICATION_ID, buildNotification(percent, filter))
-                showOverlay(percent, filter)
+                startForeground(NOTIFICATION_ID, buildNotification(percent, filter, alphaOverride))
+                showOverlay(percent, filter, alphaOverride)
             }
         }
         return START_STICKY
@@ -55,8 +60,8 @@ class DimOverlayService : Service() {
         super.onDestroy()
     }
 
-    private fun showOverlay(percent: Int, filter: DimFilter) {
-        val color = OverlayColor.argb(percent, filter)
+    private fun showOverlay(percent: Int, filter: DimFilter, alphaOverride: Float?) {
+        val color = OverlayColor.argb(percent, filter, alphaOverride)
         overlayView?.let {
             it.setBackgroundColor(color)
             return
@@ -113,11 +118,17 @@ class DimOverlayService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(percent: Int, filter: DimFilter) =
+    private fun buildNotification(percent: Int, filter: DimFilter, alphaOverride: Float?) =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Dark App is dimming the screen")
-            .setContentText("$percent% dim, ${filter.label.lowercase()} tone")
+            .setContentText(
+                if (alphaOverride != null) {
+                    "Blackout ${(alphaOverride * 100).roundToInt()}%, ${filter.label.lowercase()} tone"
+                } else {
+                    "$percent% dim, ${filter.label.lowercase()} tone"
+                },
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openAppIntent())
@@ -148,15 +159,22 @@ class DimOverlayService : Service() {
         const val ACTION_STOP = "com.reinekes.darkapp.STOP_DIM"
         const val EXTRA_PERCENT = "extra_percent"
         const val EXTRA_FILTER = "extra_filter"
+        const val EXTRA_ALPHA_OVERRIDE = "extra_alpha_override"
 
         private const val CHANNEL_ID = "screen_dimmer"
         private const val NOTIFICATION_ID = 40
 
-        fun startIntent(context: Context, percent: Int, filter: DimFilter): Intent =
+        fun startIntent(
+            context: Context,
+            percent: Int,
+            filter: DimFilter,
+            alphaOverride: Float? = null,
+        ): Intent =
             Intent(context, DimOverlayService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_PERCENT, percent)
                 putExtra(EXTRA_FILTER, filter.name)
+                alphaOverride?.let { putExtra(EXTRA_ALPHA_OVERRIDE, it) }
             }
 
         fun stopIntent(context: Context): Intent =

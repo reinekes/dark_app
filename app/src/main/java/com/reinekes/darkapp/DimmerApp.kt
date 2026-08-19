@@ -91,15 +91,26 @@ private fun DimmerScreen() {
     var percent by remember { mutableIntStateOf(36) }
     var enabled by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(DimFilter.Neutral) }
+    var alphaOverride by remember { mutableStateOf<Float?>(null) }
     var brightnessBoost by remember { mutableStateOf(BrightnessBoost.Auto) }
 
-    fun startOverlay(nextPercent: Int = percent, nextFilter: DimFilter = filter) {
+    fun startOverlay(
+        nextPercent: Int = percent,
+        nextFilter: DimFilter = filter,
+        nextAlphaOverride: Float? = alphaOverride,
+    ) {
         percent = nextPercent
         filter = nextFilter
+        alphaOverride = nextAlphaOverride
         enabled = true
         ContextCompat.startForegroundService(
             context,
-            DimOverlayService.startIntent(context, nextPercent, nextFilter),
+            DimOverlayService.startIntent(
+                context = context,
+                percent = nextPercent,
+                filter = nextFilter,
+                alphaOverride = nextAlphaOverride,
+            ),
         )
     }
 
@@ -145,15 +156,17 @@ private fun DimmerScreen() {
                 percent = percent,
                 enabled = enabled,
                 filter = filter,
+                alphaOverride = alphaOverride,
                 brightnessBoost = brightnessBoost,
                 onPercentChange = { next ->
                     percent = next
-                    if (enabled) startOverlay(next, filter)
+                    alphaOverride = null
+                    if (enabled) startOverlay(next, filter, null)
                 },
-                onPreset = { preset -> startOverlay(preset.percent, filter) },
+                onPreset = { preset -> startOverlay(preset.percent, filter, preset.alphaOverride) },
                 onFilter = { next ->
                     filter = next
-                    if (enabled) startOverlay(percent, next)
+                    if (enabled) startOverlay(percent, next, alphaOverride)
                 },
                 onBrightnessBoost = ::applyBrightnessBoost,
                 onStart = { startOverlay() },
@@ -281,6 +294,7 @@ private fun ControlPanel(
     percent: Int,
     enabled: Boolean,
     filter: DimFilter,
+    alphaOverride: Float?,
     brightnessBoost: BrightnessBoost,
     onPercentChange: (Int) -> Unit,
     onPreset: (DimPreset) -> Unit,
@@ -304,9 +318,13 @@ private fun ControlPanel(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Dim level", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("$percent%", fontSize = 52.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (alphaOverride != null) "Blackout" else "$percent%",
+                        fontSize = if (alphaOverride != null) 42.sp else 52.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
-                DimPreview(percent = percent, filter = filter)
+                DimPreview(percent = percent, filter = filter, alphaOverride = alphaOverride)
             }
 
             Slider(
@@ -322,13 +340,14 @@ private fun ControlPanel(
             )
 
             Text(
-                text = "Overlay alpha ${(DimMath.alphaForPercent(percent) * 100).roundToInt()}%",
+                text = "Overlay alpha ${((alphaOverride ?: DimMath.alphaForPercent(percent)) * 100).roundToInt()}%",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
             )
 
             PresetChips(
                 percent = percent,
+                alphaOverride = alphaOverride,
                 onPreset = onPreset,
             )
 
@@ -376,13 +395,13 @@ private fun ControlPanel(
 }
 
 @Composable
-private fun PresetChips(percent: Int, onPreset: (DimPreset) -> Unit) {
+private fun PresetChips(percent: Int, alphaOverride: Float?, onPreset: (DimPreset) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         DimPreset.entries.chunked(2).forEach { rowPresets ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 rowPresets.forEach { preset ->
                     FilterChip(
-                        selected = percent == preset.percent,
+                        selected = percent == preset.percent && alphaOverride == preset.alphaOverride,
                         onClick = { onPreset(preset) },
                         label = { Text(preset.label) },
                         modifier = Modifier.weight(1f),
@@ -432,8 +451,8 @@ private fun BrightnessBoostChips(
 }
 
 @Composable
-private fun DimPreview(percent: Int, filter: DimFilter) {
-    val alpha = DimMath.alphaForPercent(percent).coerceIn(0f, 1f)
+private fun DimPreview(percent: Int, filter: DimFilter, alphaOverride: Float?) {
+    val alpha = (alphaOverride ?: DimMath.alphaForPercent(percent)).coerceIn(0f, 1f)
     val tone = Color(filter.red, filter.green, filter.blue, 255)
 
     Box(

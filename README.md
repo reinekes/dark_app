@@ -9,6 +9,7 @@ Native Android prototype for smart screen dimming.
 - Foreground notification with a stop action.
 - Reading, Night, and Ultra presets.
 - Deep preset with stronger dimming up to a 96% overlay alpha.
+- Blackout preset with a dedicated 99% overlay alpha.
 - Optional brightness boost through Android system brightness.
 - Neutral, Warm, and Red tone filters.
 - Jetpack Compose Material 3 control screen.
